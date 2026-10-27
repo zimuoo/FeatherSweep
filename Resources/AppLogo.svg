@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">轻扫</title>
+  <desc id="desc">原创蓝色圆角磁盘与清洁星芒标志。与应用 Branding.swift 使用相同归一化几何。</desc>
+  <defs>
+    <linearGradient id="blue" x1=".1" y1=".95" x2=".9" y2=".05" gradientUnits="userSpaceOnUse">
+      <stop stop-color="rgb(2%, 64%, 100%)"/>
+      <stop offset="1" stop-color="rgb(2%, 34%, 98%)"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(0 1024) scale(1024 -1024)">
+    <rect x=".055" y=".055" width=".89" height=".89" rx=".205" fill="url(#blue)"/>
+    <g stroke="white" stroke-width=".052" stroke-linecap="round" fill="none">
+      <path d="M .624455389355162 .688792416636154 A .258 .258 0 1 1 .717490895934494 .473800045961437"/>
+      <path d="M .31 .39 L .345 .59 Q .35 .61 .37 .61 L .55 .61 Q .57 .61 .575 .59 L .61 .39 L .61 .32 Q .61 .29 .58 .29 L .34 .29 Q .31 .29 .31 .32 Z"/>
+      <path d="M .32 .39 L .60 .39"/>
+    </g>
+    <circle cx=".5475" cy=".3375" r=".0125" fill="white"/>
+    <path d="M .73 .82 L .765 .725 L .86 .69 L .765 .655 L .73 .56 L .695 .655 L .60 .69 L .695 .725 Z" fill="white"/>
+  </g>
+</svg>

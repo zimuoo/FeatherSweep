@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0",
+  "tests": 32,
+  "test_result": "passed",
+  "architecture": "arm64",
+  "minimum_macos": "14.0",
+  "bundle_identifier": "io.github.zimuoo.FeatherSweep",
+  "signing": "ad hoc, not Apple notarized",
+  "dmg_bytes": 1432148,
+  "sha256": "81fa0d9d2189625dae20c794fefa08d14ff9469459c29659eabb8533a925772f",
+  "read_only_mount": "passed",
+  "native_menu_lifecycle": "passed",
+  "demo_never_cleans_user_files": true
+}
