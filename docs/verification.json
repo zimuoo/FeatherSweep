@@ -17,5 +17,8 @@
   "default_selection": "empty",
   "only_selected_candidates_cleaned": true,
   "demo_never_cleans_user_files": true,
-  "real_scan": "read-only, exit 0"
+  "real_scan": "read-only, exit 0",
+  "release_source_commit": "6d8c1df4c8b7cfd95a5b7d84c514073a1927ee8c",
+  "public_release": "https://github.com/zimuoo/FeatherSweep/releases/tag/v1.1.0",
+  "public_download_verification": "unauthenticated download bytes and SHA-256 match local DMG"
 }

@@ -28,4 +28,4 @@ Files: Sources/FeatherSweep/CleanerView.swift, CleanerViewModel.swift, FeatherSw
 Files: bilingual READMEs, changelog, screenshot, verification JSON, scripts/build.sh and native About version.
 - [x] Document actual supported patterns and impacts, default empty selection, model/auth/history preservation, version/size/download links and architecture/signing limits.
 - [x] Build 1.1.0 DMG, verify codesign + hdiutil + read-only mount + checksum. Run only read-only scan on the real Mac.
-- [ ] Review staged paths and secrets, commit, fast-forward main and push. Publish v1.1.0 with DMG and SHA256SUMS. Verify remote commit, public assets and downloaded byte hashes.
+- [x] Review staged paths and secrets, commit, fast-forward main and push. Publish v1.1.0 with DMG and SHA256SUMS. Verify remote commit, public assets and downloaded byte hashes.
