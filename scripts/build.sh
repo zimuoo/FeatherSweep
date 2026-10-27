@@ -4,16 +4,26 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 DIST_DIR="$PROJECT_DIR/dist"
 APP_NAME="轻扫"
-VERSION="1.1.0"
-DMG_NAME="FeatherSweep-${VERSION}-arm64.dmg"
-
-if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
-    echo "This build script requires an Apple Silicon Mac with Apple's command-line tools." >&2
+VERSION="1.2.0"
+HOST_ARCH="$(uname -m)"
+TARGET_ARCH="${1:-$HOST_ARCH}"
+if [[ "$#" -gt 1 || ( "$TARGET_ARCH" != "arm64" && "$TARGET_ARCH" != "x86_64" ) ]]; then
+    echo "Usage: bash scripts/build.sh [arm64|x86_64] (defaults to the host architecture)" >&2
     exit 1
 fi
-for tool in swift swiftc iconutil codesign hdiutil strip plutil; do
+DMG_NAME="FeatherSweep-${VERSION}-${TARGET_ARCH}.dmg"
+
+if [[ "$(uname -s)" != "Darwin" || ( "$HOST_ARCH" != "arm64" && "$HOST_ARCH" != "x86_64" ) ]]; then
+    echo "This build script requires a Mac with Apple's command-line tools." >&2
+    exit 1
+fi
+for tool in swift swiftc iconutil codesign hdiutil strip plutil lipo ditto otool curl shasum; do
     command -v "$tool" >/dev/null || { echo "Missing system tool: $tool" >&2; exit 1; }
 done
+
+source "$PROJECT_DIR/scripts/sparkle-tools.sh"
+PUBLIC_KEY="$(tr -d '\r\n' < "$PROJECT_DIR/Resources/UpdatePublicKey.txt")"
+[[ ${#PUBLIC_KEY} -eq 44 ]] || { echo "Invalid Sparkle public key" >&2; exit 1; }
 
 mkdir -p "$DIST_DIR" "$PROJECT_DIR/Resources/AppIcon.iconset"
 # A private directory prevents shared scratch/cache paths or preexisting symlinks.
@@ -30,7 +40,7 @@ export CLANG_MODULE_CACHE_PATH="$BUILD_ROOT/clang-module-cache"
 mkdir -p "$SWIFT_MODULECACHE_PATH" "$SWIFTPM_MODULECACHE_OVERRIDE" "$CLANG_MODULE_CACHE_PATH"
 
 echo "Rendering the shared vector logo…"
-xcrun swiftc -O -parse-as-library -target arm64-apple-macos14.0 \
+xcrun swiftc -O -parse-as-library -target "${HOST_ARCH}-apple-macos14.0" \
     -module-cache-path "$SWIFT_MODULECACHE_PATH" \
     "$PROJECT_DIR/Sources/FeatherSweep/Branding.swift" "$PROJECT_DIR/scripts/render-icon.swift" \
     -o "$BUILD_ROOT/render-icon"
@@ -41,11 +51,13 @@ cp "$RENDERED_RESOURCES/AppLogo.png" "$PROJECT_DIR/Resources/AppLogo.png"
 cp "$RENDERED_RESOURCES/AppIcon.icns" "$PROJECT_DIR/Resources/AppIcon.icns"
 cp "$RENDERED_RESOURCES/AppIcon.iconset/"*.png "$PROJECT_DIR/Resources/AppIcon.iconset/"
 
-echo "Building FeatherSweep release for arm64…"
+echo "Building FeatherSweep release for ${TARGET_ARCH}…"
 BUILD_OPTIONS=(--package-path "$PROJECT_DIR" --scratch-path "$BUILD_ROOT/swiftpm"
-    --configuration release --arch arm64 --disable-sandbox
+    --cache-path "$PROJECT_DIR/.build/packaging-cache"
+    --configuration release --triple "${TARGET_ARCH}-apple-macosx14.0" --disable-sandbox
     -Xswiftc -module-cache-path -Xswiftc "$SWIFT_MODULECACHE_PATH"
-    -Xcc "-fmodules-cache-path=$CLANG_MODULE_CACHE_PATH")
+    -Xcc "-fmodules-cache-path=$CLANG_MODULE_CACHE_PATH"
+    -Xlinker -rpath -Xlinker @executable_path/../Frameworks)
 xcrun swift build "${BUILD_OPTIONS[@]}" --product FeatherSweep
 BIN_DIR="$(xcrun swift build "${BUILD_OPTIONS[@]}" --show-bin-path)"
 
@@ -58,7 +70,23 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BIN_DIR/FeatherSweep" "$APP_DIR/Contents/MacOS/FeatherSweep"
 chmod 755 "$APP_DIR/Contents/MacOS/FeatherSweep"
 strip -x "$APP_DIR/Contents/MacOS/FeatherSweep"
+ACTUAL_ARCH="$(lipo -archs "$APP_DIR/Contents/MacOS/FeatherSweep")"
+if [[ "$ACTUAL_ARCH" != "$TARGET_ARCH" ]]; then
+    echo "Architecture mismatch: expected $TARGET_ARCH, got $ACTUAL_ARCH" >&2
+    exit 1
+fi
 cp "$RENDERED_RESOURCES/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
+# The complete official framework retains its signed nested components and symlinks.
+mkdir -p "$APP_DIR/Contents/Frameworks"
+SPARKLE_FRAMEWORK="$(find "$BUILD_ROOT/swiftpm/artifacts" -type d -name Sparkle.framework -print)"
+[[ -d "$SPARKLE_FRAMEWORK" && "$SPARKLE_FRAMEWORK" != *$'\n'* ]] || {
+    echo "Expected exactly one resolved SwiftPM Sparkle framework" >&2; exit 1;
+}
+ditto "$SPARKLE_FRAMEWORK" "$APP_DIR/Contents/Frameworks/Sparkle.framework"
+cp "$SPARKLE_ROOT/LICENSE" "$APP_DIR/Contents/Resources/Sparkle-LICENSE.txt"
+codesign --verify --deep --strict "$APP_DIR/Contents/Frameworks/Sparkle.framework"
+otool -L "$APP_DIR/Contents/MacOS/FeatherSweep" | grep '@rpath/Sparkle.framework/' >/dev/null
+otool -l "$APP_DIR/Contents/MacOS/FeatherSweep" | grep '@executable_path/../Frameworks' >/dev/null
 cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -72,8 +100,8 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>轻扫</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.1.0</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleShortVersionString</key><string>1.2.0</string>
+    <key>CFBundleVersion</key><string>3</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key><true/>
@@ -82,6 +110,13 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+plutil -insert SUFeedURL -string "https://github.com/zimuoo/FeatherSweep/releases/latest/download/appcast-${TARGET_ARCH}.xml" "$APP_DIR/Contents/Info.plist"
+plutil -insert SUPublicEDKey -string "$PUBLIC_KEY" "$APP_DIR/Contents/Info.plist"
+for key in SUEnableAutomaticChecks SUAutomaticallyUpdate SUVerifyUpdateBeforeExtraction SURequireSignedFeed; do
+    plutil -insert "$key" -bool true "$APP_DIR/Contents/Info.plist"
+done
+plutil -insert SUScheduledCheckInterval -integer 21600 "$APP_DIR/Contents/Info.plist"
+plutil -insert SUSendProfileInfo -bool false "$APP_DIR/Contents/Info.plist"
 plutil -lint "$APP_DIR/Contents/Info.plist"
 
 echo "Signing locally (ad hoc; no Developer ID or Apple notarization)…"

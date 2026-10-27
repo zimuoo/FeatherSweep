@@ -6,12 +6,12 @@
   <p>
     <a href="https://github.com/zimuoo/FeatherSweep/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/zimuoo/FeatherSweep?style=flat-square&color=007AFF" /></a>
     <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111827?style=flat-square&amp;logo=apple&amp;logoColor=white" />
-    <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple_Silicon-arm64-007AFF?style=flat-square" />
-    <img alt="DMG 1.5 MB" src="https://img.shields.io/badge/DMG-1.5_MB-007AFF?style=flat-square" />
+    <img alt="Apple Silicon and Intel" src="https://img.shields.io/badge/Apple_Silicon_%2B_Intel-arm64_%7C_x86__64-007AFF?style=flat-square" />
+    <img alt="DMG 2.4 MB" src="https://img.shields.io/badge/DMG-2.4_MB-007AFF?style=flat-square" />
     <img alt="Native SwiftUI" src="https://img.shields.io/badge/SwiftUI-Native-FA7343?style=flat-square&amp;logo=swift&amp;logoColor=white" />
-    <img alt="70 local safety tests" src="https://img.shields.io/badge/safety_tests-70_passed-22A06B?style=flat-square" />
+    <img alt="82 local safety tests" src="https://img.shields.io/badge/safety_tests-82_passed-22A06B?style=flat-square" />
   </p>
-  <p><a href="https://github.com/zimuoo/FeatherSweep/releases/latest/download/FeatherSweep-1.1.0-arm64.dmg"><strong>下载 DMG 安装包</strong></a> · <a href="README.en.md">English</a> · <a href="#开发与验证">开发说明</a></p>
+  <p><a href="https://github.com/zimuoo/FeatherSweep/releases/download/v1.2.0/FeatherSweep-1.2.0-arm64.dmg"><strong>下载 M 系列版</strong></a> · <a href="https://github.com/zimuoo/FeatherSweep/releases/download/v1.2.0/FeatherSweep-1.2.0-x86_64.dmg"><strong>下载 Intel 版</strong></a> · <a href="README.en.md">English</a> · <a href="#开发与验证">开发说明</a></p>
 </div>
 
 ---
@@ -34,31 +34,55 @@
 
 | | 体验 |
 |---|---|
-| **原生小窗口** | SwiftUI / AppKit 构建，无第三方运行时；本次 DMG 约 **1.5 MB**，以 Release 文件为准。 |
+| **原生小窗口** | SwiftUI / AppKit 构建，使用原生 Sparkle 更新框架；本次 DMG 约 **2.4 MB**，以 Release 文件为准。 |
 | **两步完成** | 查看路径与影响 → 自行勾选 → 重新校验后清理。启动时不会自动删除文件。 |
 | **菜单栏常驻** | 关闭主窗口继续运行；可打开窗口、查看垃圾、清理或退出。 |
 | **细腻动效** | 扫描环、数字过渡、清理粒子与完成动画，支持“减少动态效果”。 |
-| **完全本地** | 无需账号，不发起网络请求，不上传文件内容。 |
+| **本地清理** | 无需账号；仅自动更新访问 GitHub 与下载服务，不上传扫描数据、文件内容或账号信息。 |
+| **自动更新** | 启动和每 6 小时检查正式版本；验签后，等待任务完成，再自动安装并重启。菜单栏可关闭。 |
 | **明确保护** | 浏览器密码、Cookie、登录状态、源码、正式发布文件及最新场景备份均保留。 |
 
 ## 下载与安装
 
-1. 在 [Releases](https://github.com/zimuoo/FeatherSweep/releases/latest) 下载 `FeatherSweep-1.1.0-arm64.dmg`。
+请按 Mac 的芯片类型选择安装包（“苹果菜单 → 关于本机”可查看）：
+
+| Mac 芯片 | 安装包 | 体积 |
+|---|---|---|
+| Apple Silicon（M 系列） | [FeatherSweep-1.2.0-arm64.dmg](https://github.com/zimuoo/FeatherSweep/releases/download/v1.2.0/FeatherSweep-1.2.0-arm64.dmg) | 约 2.4 MB |
+| Intel | [FeatherSweep-1.2.0-x86_64.dmg](https://github.com/zimuoo/FeatherSweep/releases/download/v1.2.0/FeatherSweep-1.2.0-x86_64.dmg) | 约 2.4 MB |
+
+1. 下载对应芯片的 DMG。
 2. 打开 DMG，将 **轻扫.app** 拖入 **Applications**。
 3. 从“应用程序”打开 **轻扫**，点击 **查看垃圾**。
 4. 展开分类，阅读影响说明，勾选需要移除的内容，再点击 **清理垃圾**。
 
-**系统要求：** Apple Silicon（M 系列芯片），macOS 14 或更高版本。本次 Release 为 arm64 本机版。
+**系统要求：** Apple Silicon（M 系列）或 Intel Mac，macOS 14 或更高版本。两个安装包均为对应芯片的原生版本，功能一致。
 
 > 当前版本使用本机 ad hoc 签名，尚未取得 Apple Developer ID 公证。从互联网下载后，macOS 可能要求确认应用来源；请仅使用本仓库的 Release。不会要求关闭 Gatekeeper 或安装 root 辅助程序。
 
 遇到来源验证提示时，可先核对下方 SHA-256，再按 [Apple 的说明](https://support.apple.com/zh-cn/guide/mac-help/mh40616/mac) 在“系统设置 → 隐私与安全性”中确认打开。
 
-可同时下载 `SHA256SUMS.txt` 校验安装包：
+可同时下载 [SHA256SUMS](https://github.com/zimuoo/FeatherSweep/releases/download/v1.2.0/SHA256SUMS) 校验安装包：
 
 ```sh
-shasum -a 256 -c SHA256SUMS.txt
+# 同一目录仅下载了其中一个安装包时，只校验对应文件
+shasum -a 256 FeatherSweep-1.2.0-x86_64.dmg
+# 将结果与 SHA256SUMS 中同名文件的记录对照。
+# 两个安装包均已下载时，可批量校验：
+shasum -a 256 -c SHA256SUMS
 ```
+
+## GitHub 自动更新
+
+从 **1.2.0** 开始，默认在启动时和每 **6 小时**检查一次本仓库的正式版本。发现新版后自动下载匹配当前应用架构的安装包；验证发布签名后，等待扫描或清理任务结束，再安装并重新打开。更新不会触碰清理项目的选择规则或浏览器凭据。
+
+- 菜单栏 **检查更新…**：立即检查正式版。
+- 菜单栏 **自动下载安装更新**：随时关闭或重新开启，设置会保留。
+- 更新订阅和安装包均使用 Ed25519 签名；验签失败不安装。私钥只保存在发布者本机钥匙串。
+- 更新需要联网，会访问 GitHub 及其下载服务；不上传扫描结果、文件内容、聊天或密码，也不发送系统配置报告。
+- 演示模式、截图和 `--scan-json` 不启动更新。系统要求管理员授权时，使用标准 macOS 授权流程。
+
+**1.1.0 及更早版本没有更新器，需要手动安装一次 1.2.0。** 此后通过本项目发布流程生成的正式版本可自动更新。请先把应用拖入 Applications，再运行；从只读 DMG 运行无法原位安装更新。
 
 ## 只清理这些内容
 
@@ -125,11 +149,22 @@ swift test --scratch-path /private/tmp/feathersweep-test-build
 # 在已登录 Mac 桌面上运行原生窗口、勾选控件与菜单栏测试
 FEATHERSWEEP_NATIVE_UI_TESTS=1 swift test --disable-sandbox --scratch-path /private/tmp/feathersweep-test-build
 
-# 生成本机 arm64 DMG
+# 默认生成当前 Mac 芯片对应的 DMG
 bash scripts/build.sh
+# 也可明确指定芯片架构（支持在 M 系列 Mac 上交叉编译 Intel 版）
+bash scripts/build.sh arm64
+bash scripts/build.sh x86_64
 ```
 
-打包脚本使用系统 Swift、AppKit、`iconutil`、`codesign` 与 `hdiutil`。每次构建使用独立的 `dist/.feathersweep-build.XXXXXX` 临时目录，完成后移除；校验后的 DMG 原子发布到 `dist/`。无需下载依赖。
+打包脚本使用系统 Swift、AppKit、`iconutil`、`codesign` 与 `hdiutil`；首次构建会下载并校验固定版本的 Sparkle 2.10.1 依赖和 SDK。每次构建使用独立的 `dist/.feathersweep-build.XXXXXX` 临时目录，完成后移除；校验后的 DMG 原子发布到 `dist/`。完整框架随应用打包，无需用户单独安装。图标生成工具使用构建机架构，应用使用指定目标架构，打包前会核对实际 Mach-O 架构。
+
+生成新版本的两个安装包、签名更新订阅与校验文件：
+
+```sh
+bash scripts/release-updates.sh
+```
+
+发布步骤、签名密钥保管和后续版本号修改见 [发布说明](scripts/RELEASING.md)。依赖许可见 [第三方声明](THIRD_PARTY_NOTICES.md)。本项目目前仅声明“源码公开”，未添加项目许可证。
 
 安全演示与真实只读诊断：
 
@@ -141,7 +176,7 @@ bash scripts/build.sh
 "/Applications/轻扫.app/Contents/MacOS/FeatherSweep" --scan-json
 ```
 
-70 项测试已在本机完整通过（含原生界面测试，0 跳过）。默认 `swift test` 会明确跳过需要 WindowServer 的 3 项测试；使用上方环境变量可启用。覆盖范围包括：勾选过滤、未选保留、空分类与混合勾选状态、菜单栏联动、AI 快照保留期与动态应用识别，以及凭据与源码保留、只读扫描、文件变化跳过、符号链接保护、Cargo 锁、使用中途打开文件、Blender 场景名边界、签名副本保留顺序、重复包引用保护、静态缓存识别及部分清理统计。
+82 项测试已在本机完整通过（含原生界面测试，0 失败、0 跳过）。默认 `swift test` 会明确跳过需要 WindowServer 的 6 项测试；使用上方环境变量可启用。覆盖范围包括：勾选过滤、未选保留、空分类与混合勾选状态、菜单栏联动、AI 快照保留期与动态应用识别，以及凭据与源码保留、只读扫描、文件变化跳过、符号链接保护、Cargo 锁、使用中途打开文件、Blender 场景名边界、签名副本保留顺序、重复包引用保护、静态缓存识别及部分清理统计。
 
 <details>
 <summary><strong>项目结构</strong></summary>
@@ -172,7 +207,7 @@ docs/                  # 设计说明与界面截图
 
 **关闭窗口后如何退出？** 点菜单栏中的轻扫图标，选择“退出 轻扫”。
 
-**支持 Intel Mac 吗？** 当前公开安装包为 Apple Silicon arm64 版本；本仓库尚未提供或验证 Intel 安装包。
+**支持 Intel Mac 吗？** 支持，下载 `x86_64.dmg`，需 macOS 14+。Intel 包在 M 系列 Mac 上交叉编译，并通过 Rosetta 2 验证启动、界面和测试；尚未在实体 Intel Mac 上验证。
 
 ---
 

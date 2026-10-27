@@ -2,8 +2,8 @@
   <img src="Resources/AppLogo.png" width="96" alt="FeatherSweep logo" />
   <h1>FeatherSweep · 轻扫</h1>
   <p><strong>A small native window for a carefully scoped Mac cleanup.</strong></p>
-  <p>macOS 14+ · Apple Silicon · SwiftUI + AppKit · Menu bar support</p>
-  <p><a href="https://github.com/zimuoo/FeatherSweep/releases/latest/download/FeatherSweep-1.1.0-arm64.dmg"><strong>Download DMG</strong></a> · <a href="README.md">简体中文</a></p>
+  <p>macOS 14+ · Apple Silicon + Intel · SwiftUI + AppKit · Menu bar support</p>
+  <p><a href="https://github.com/zimuoo/FeatherSweep/releases/download/v1.2.0/FeatherSweep-1.2.0-arm64.dmg"><strong>Download Apple Silicon</strong></a> · <a href="https://github.com/zimuoo/FeatherSweep/releases/download/v1.2.0/FeatherSweep-1.2.0-x86_64.dmg"><strong>Download Intel</strong></a> · <a href="README.md">简体中文</a></p>
 </div>
 
 <p align="center"><img src="docs/images/overview.png" width="460" alt="Native FeatherSweep window with example cleanup data" /><br /><sub>Actual native UI using demo data, not a live disk measurement.</sub></p>
@@ -16,19 +16,37 @@
 
 **View garbage**, inspect paths and impacts, select the items you want, then **clean garbage**. Every scan starts with nothing selected. Closing the window leaves FeatherSweep available in the menu bar. Scanning rings, numeric transitions, cleanup particles and completion feedback respect Reduce Motion.
 
-The app runs locally, requires no account, and makes no network requests. There is no third-party runtime, privileged helper, launch agent or automatic startup cleanup.
+Cleanup runs locally and requires no account. Update checks contact GitHub and its download services; scan data, file contents and credentials are never uploaded. Sparkle 2.10.1 provides the native update mechanism. There is no automatic startup cleanup.
 
 ## Install
 
-Download `FeatherSweep-1.1.0-arm64.dmg` from [Releases](https://github.com/zimuoo/FeatherSweep/releases/latest), open it, and drag **轻扫.app** into **Applications**.
+Choose the native build matching your Mac’s chip in Apple menu → About This Mac:
 
-Requires an Apple Silicon Mac running macOS 14 or newer. The current build is locally ad hoc signed, **not Apple notarized**. Use only this repository's release assets. FeatherSweep does not ask you to disable Gatekeeper.
+| Chip | Installer | Size |
+|---|---|---|
+| Apple Silicon (M series) | [FeatherSweep-1.2.0-arm64.dmg](https://github.com/zimuoo/FeatherSweep/releases/download/v1.2.0/FeatherSweep-1.2.0-arm64.dmg) | ~2.4 MB |
+| Intel | [FeatherSweep-1.2.0-x86_64.dmg](https://github.com/zimuoo/FeatherSweep/releases/download/v1.2.0/FeatherSweep-1.2.0-x86_64.dmg) | ~2.4 MB |
+
+Open the DMG and drag **轻扫.app** into **Applications**. Both installers provide the same app features.
+
+Requires an Apple Silicon or Intel Mac running macOS 14 or newer. The current build is locally ad hoc signed, **not Apple notarized**. Use only this repository's release assets. FeatherSweep does not ask you to disable Gatekeeper.
 
 If macOS asks to verify the source, compare the checksum and follow [Apple’s instructions](https://support.apple.com/guide/mac-help/mh40616/mac) in System Settings → Privacy & Security.
 
 ```sh
-shasum -a 256 -c SHA256SUMS.txt
+# If you downloaded only the Intel installer, compare this hash with its entry in SHA256SUMS:
+shasum -a 256 FeatherSweep-1.2.0-x86_64.dmg
+# If both installers are present:
+shasum -a 256 -c SHA256SUMS
 ```
+
+## Automatic GitHub updates
+
+Starting with **1.2.0**, automatic updates are enabled by default. FeatherSweep checks at launch and every **6 hours**, downloads the native package for its architecture, verifies its Ed25519 signature, then waits for scanning or cleanup to finish before installing and restarting.
+
+Use **检查更新…** (Check for Updates) or toggle **自动下载安装更新** (Automatically Download and Install Updates) in the menu bar. Preferences persist. The feed and archive are signed; failed validation prevents installation. The private release key remains in the publisher’s login Keychain. System profiling is disabled.
+
+**Versions 1.1.0 and earlier need one manual upgrade to 1.2.0.** Later signed releases published through this repository’s release workflow are discovered automatically. Run the app from Applications, not a read-only disk image. macOS may request administrator authorization when needed. Demo, screenshot and read-only scan modes do not start update checks.
 
 ## Carefully defined cleanup scope
 
@@ -73,12 +91,18 @@ The catalog recognizes cache layouts for Claude, Codex, ChatGPT, Doubao, Qianwen
 git clone https://github.com/zimuoo/FeatherSweep.git
 cd FeatherSweep
 swift test --scratch-path /private/tmp/feathersweep-test-build
-# On a logged-in Mac desktop: enable the 3 native WindowServer integration tests
+# On a logged-in Mac desktop: enable the 6 native WindowServer integration tests
 FEATHERSWEEP_NATIVE_UI_TESTS=1 swift test --disable-sandbox --scratch-path /private/tmp/feathersweep-test-build
+# Defaults to the host architecture:
 bash scripts/build.sh
+# Explicit targets; Apple Silicon hosts can cross-compile the Intel build:
+bash scripts/build.sh arm64
+bash scripts/build.sh x86_64
 ```
 
-The build uses system Swift, AppKit, iconutil, codesign and hdiutil, downloads no dependencies, and removes its private per-run build directory. Output: `dist/FeatherSweep-1.1.0-arm64.dmg`.
+The build uses system Swift, AppKit, iconutil, codesign and hdiutil, downloads and verifies the pinned Sparkle dependency/SDK on first build, and removes its private per-run build directory. The icon renderer targets the host, the app targets the requested architecture, and the actual Mach-O architecture is verified before packaging. Output: `dist/FeatherSweep-1.2.0-{arm64|x86_64}.dmg`.
+
+To build both signed update feeds and installers, run `bash scripts/release-updates.sh`. See [Release instructions](scripts/RELEASING.md) and [Third-party notices](THIRD_PARTY_NOTICES.md). Project source is publicly available; no project license has been added.
 
 ```sh
 # Safe example UI: no real cleanup
@@ -88,4 +112,4 @@ The build uses system Swift, AppKit, iconutil, codesign and hdiutil, downloads n
 "/Applications/轻扫.app/Contents/MacOS/FeatherSweep" --scan-json
 ```
 
-All 70 tests passed locally with no skips, including the native selection and menu-bar checks. The default command explicitly skips the 3 WindowServer tests; the environment variable above enables them. Safety tests use disposable fixtures. They cover credential/source retention, symlinks, changed files, active files and mid-clean opens, Cargo locks, Blender naming edges, clone retention, duplicate references, static-resource parsing and partial cleanup accounting. An Intel release has not been built or verified.
+All 82 tests passed locally with no skips, including the native selection and menu-bar checks. The default command explicitly skips the 6 WindowServer tests; the environment variable above enables them. Safety tests use disposable fixtures. They cover credential/source retention, symlinks, changed files, active files and mid-clean opens, Cargo locks, Blender naming edges, clone retention, duplicate references, static-resource parsing and partial cleanup accounting. The Intel release is cross-compiled on Apple Silicon and its launch and native UI are checked under Rosetta 2. It has not been tested on physical Intel hardware.

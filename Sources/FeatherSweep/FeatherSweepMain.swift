@@ -75,6 +75,9 @@ private struct LaunchError: LocalizedError {
 final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
     private let options: LaunchOptions
     let model: CleanerViewModel
+    private let appUpdater: AppUpdater
+    private let terminationReply: (Bool) -> Void
+    private var terminationIsDeferred = false
     private(set) var window: NSWindow!
     private(set) var statusItem: NSStatusItem!
     private var scanItem: NSMenuItem!
@@ -82,9 +85,12 @@ final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
     private var statusTextItem: NSMenuItem!
     private var observation: AnyCancellable?
 
-    init(options: LaunchOptions) {
+    init(options: LaunchOptions, terminationReply: @escaping (Bool) -> Void = { NSApp.reply(toApplicationShouldTerminate: $0) }) {
         self.options = options
-        model = CleanerViewModel(isDemo: options.isDemo)
+        self.terminationReply = terminationReply
+        let model = CleanerViewModel(isDemo: options.isDemo)
+        self.model = model
+        appUpdater = AppUpdater(model: model, isDemo: options.isDemo)
         super.init()
     }
 
@@ -106,6 +112,7 @@ final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         observation = model.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.refreshMenu() }
         }
+        appUpdater.start()
         refreshMenu()
         showWindow()
         if let capturePath = options.capturePath {
@@ -121,6 +128,7 @@ final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         menu.addItem(applicationItem)
         let applicationMenu = NSMenu(title: "轻扫")
         applicationMenu.addItem(withTitle: "关于 轻扫", action: #selector(showAbout), keyEquivalent: "")
+        addUpdateItems(to: applicationMenu)
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "隐藏 轻扫", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         applicationMenu.addItem(.separator())
@@ -152,9 +160,22 @@ final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         cleanItem = NSMenuItem(title: "清理垃圾", action: #selector(clean), keyEquivalent: "")
         cleanItem.target = self
         menu.addItem(cleanItem)
+        addUpdateItems(to: menu)
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出 轻扫", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
+    }
+
+    private func addUpdateItems(to menu: NSMenu) {
+        menu.addItem(.separator())
+        let check = NSMenuItem(title: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "")
+        check.target = self
+        check.toolTip = "检查 GitHub 正式发布版本"
+        menu.addItem(check)
+        let automatic = NSMenuItem(title: "自动下载安装更新", action: #selector(toggleAutomaticUpdates), keyEquivalent: "")
+        automatic.target = self
+        automatic.toolTip = "签名验证通过后，等待扫描和清理任务完成，再自动安装并重启"
+        menu.addItem(automatic)
     }
 
     private func refreshMenu() {
@@ -167,6 +188,14 @@ final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
             ? (model.isDemo ? "仅模拟清理所选项目，不会修改任何文件" : "只删除勾选项，不进废纸篓")
             : "请在主窗口勾选要清理的项目"
         statusItem?.button?.toolTip = "轻扫 · \(model.status) · \(model.selectionSummary)"
+        let menus = [statusItem?.menu, NSApp.mainMenu?.items.first?.submenu].compactMap { $0 }
+        for item in menus.flatMap(\.items) where item.action == #selector(checkForUpdates) || item.action == #selector(toggleAutomaticUpdates) {
+            item.isEnabled = validateMenuItem(item)
+        }
+        if terminationIsDeferred && !model.isBusy {
+            terminationIsDeferred = false
+            terminationReply(true)
+        }
     }
 
     @objc private func showWindow() {
@@ -188,14 +217,30 @@ final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         model.clean()
     }
 
+    @objc private func checkForUpdates() {
+        appUpdater.checkForUpdates()
+        refreshMenu()
+    }
+
+    @objc private func toggleAutomaticUpdates() {
+        appUpdater.toggleAutomaticUpdates()
+        refreshMenu()
+    }
+
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "轻扫", .applicationVersion: "1.1.0",
+            .applicationName: "轻扫",
+            .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版本",
             .applicationIcon: Branding.image(size: 128)
         ])
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdates) { return appUpdater.canCheckForUpdates && !model.isBusy }
+        if menuItem.action == #selector(toggleAutomaticUpdates) {
+            menuItem.state = appUpdater.automaticUpdatesEnabled ? .on : .off
+            return appUpdater.isAvailable
+        }
         if menuItem.action == #selector(scan) { return !model.isBusy }
         if menuItem.action == #selector(clean) { return model.canClean }
         return true
@@ -205,6 +250,17 @@ final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegat
         sender.orderOut(nil)
         NSApp.setActivationPolicy(.accessory)
         return false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard model.isBusy else {
+            terminationIsDeferred = false
+            return .terminateNow
+        }
+        // Sparkle can resume an already-staged update without its postponement hook.
+        // The final AppKit termination boundary protects both that path and ordinary quit.
+        terminationIsDeferred = true
+        return .terminateLater
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

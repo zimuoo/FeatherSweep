@@ -131,6 +131,60 @@ final class NativeComponentTests: XCTestCase {
     }
 
     @MainActor
+    func testDemoUpdateMenusStayDisabled() throws {
+        try requireNativeTests()
+        let application = NSApplication.shared
+        _ = application.setActivationPolicy(.regular)
+        let delegate = CleanerAppDelegate(options: try LaunchOptions(arguments: ["--demo"]))
+        delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+        defer {
+            delegate.window.orderOut(nil)
+            NSStatusBar.system.removeStatusItem(delegate.statusItem)
+        }
+        let trayMenu = try XCTUnwrap(delegate.statusItem.menu)
+        let applicationMenu = try XCTUnwrap(application.mainMenu?.items.first?.submenu)
+        for menu in [trayMenu, applicationMenu] {
+            let check = try XCTUnwrap(menu.items.first { $0.title == "检查更新…" })
+            XCTAssertFalse(delegate.validateMenuItem(check))
+            let automatic = try XCTUnwrap(menu.items.first { $0.title == "自动下载安装更新" })
+            XCTAssertFalse(delegate.validateMenuItem(automatic))
+            XCTAssertEqual(automatic.state, .off)
+        }
+        XCTAssertTrue(delegate.model.isDemo)
+        XCTAssertEqual(delegate.model.phase, .scanned)
+    }
+
+    @MainActor
+    func testTerminationWaitsForBusyOperationEvenWithoutSparkleRelaunchHook() async throws {
+        try requireNativeTests()
+        let application = NSApplication.shared
+        _ = application.setActivationPolicy(.regular)
+        var replies: [Bool] = []
+        let delegate = CleanerAppDelegate(options: try LaunchOptions(arguments: ["--demo"]), terminationReply: { replies.append($0) })
+        delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+        defer {
+            delegate.window.orderOut(nil)
+            NSStatusBar.system.removeStatusItem(delegate.statusItem)
+        }
+        delegate.model.scan()
+        let request = (delegate as NSApplicationDelegate).applicationShouldTerminate?(application)
+        XCTAssertEqual(request, .terminateLater)
+        XCTAssertTrue(replies.isEmpty)
+        let deadline = Date().addingTimeInterval(5)
+        while delegate.model.isBusy, Date() < deadline { try await Task.sleep(for: .milliseconds(30)) }
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(replies, [true])
+        XCTAssertEqual(delegate.model.phase, .scanned)
+    }
+
+    @MainActor
+    func testIdleTerminationDoesNotWait() throws {
+        try requireNativeTests()
+        let delegate = CleanerAppDelegate(options: try LaunchOptions(arguments: ["--demo"]), terminationReply: { _ in XCTFail("Idle quit must not be deferred") })
+        XCTAssertEqual((delegate as NSApplicationDelegate).applicationShouldTerminate?(NSApplication.shared), .terminateNow)
+    }
+
+    @MainActor
     private func nativeButtons(in parent: NSView) -> [NSButton] {
         parent.subviews.flatMap { child in
             (child as? NSButton).map { [$0] } ?? nativeButtons(in: child)
