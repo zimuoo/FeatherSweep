@@ -1,14 +1,21 @@
 {
-  "version": "1.0.0",
-  "tests": 32,
+  "version": "1.1.0",
+  "tests": 70,
   "test_result": "passed",
+  "test_failures": 0,
+  "test_skips": 0,
+  "native_ui_tests": 3,
   "architecture": "arm64",
   "minimum_macos": "14.0",
   "bundle_identifier": "io.github.zimuoo.FeatherSweep",
   "signing": "ad hoc, not Apple notarized",
-  "dmg_bytes": 1432148,
-  "sha256": "81fa0d9d2189625dae20c794fefa08d14ff9469459c29659eabb8533a925772f",
+  "dmg_bytes": 1493573,
+  "sha256": "eb4242ab4ecc187ba1bf666a51198cdc3c1e9aeeedf68a799cd24e615fe375e4",
   "read_only_mount": "passed",
   "native_menu_lifecycle": "passed",
-  "demo_never_cleans_user_files": true
+  "native_empty_mixed_selection": "passed",
+  "default_selection": "empty",
+  "only_selected_candidates_cleaned": true,
+  "demo_never_cleans_user_files": true,
+  "real_scan": "read-only, exit 0"
 }

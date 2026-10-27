@@ -10,6 +10,7 @@ final class CleanerViewModel: ObservableObject {
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var report: ScanReport?
     @Published private(set) var result: CleanupResult?
+    @Published private(set) var selectedIDs: Set<String> = []
     @Published private(set) var progress = 0.0
     @Published private(set) var status = "查看可安全清理的文件"
     @Published private(set) var errorMessage: String?
@@ -26,7 +27,12 @@ final class CleanerViewModel: ObservableObject {
     }
 
     var isBusy: Bool { phase == .scanning || phase == .cleaning }
-    var canClean: Bool { phase == .scanned && !(report?.candidates.isEmpty ?? true) }
+    var canSelect: Bool { phase == .scanned }
+    var selectedReport: ScanReport? { report?.selecting(selectedIDs) }
+    var selectedCount: Int { selectedReport?.candidates.count ?? 0 }
+    var selectedBytes: Int64 { selectedReport?.totalBytes ?? 0 }
+    var selectionSummary: String { "已选 \(selectedCount) 项 · \(Self.bytes(selectedBytes))" }
+    var canClean: Bool { canSelect && selectedCount > 0 }
     var displayedBytes: Int64 { result?.removedBytes ?? report?.totalBytes ?? 0 }
     var summaryTitle: String { result == nil ? "可清理空间" : "已移除文件" }
     var categoryCaption: String { result == nil ? "清理项目" : "本次扫描项目" }
@@ -54,8 +60,56 @@ final class CleanerViewModel: ObservableObject {
         report?.candidates.filter { $0.category == category } ?? []
     }
 
+    func isSelected(_ id: String) -> Bool { selectedIDs.contains(id) }
+
+    func setSelected(_ selected: Bool, for id: String) {
+        guard canSelect, report?.candidates.contains(where: { $0.id == id }) == true else { return }
+        if selected { selectedIDs.insert(id) } else { selectedIDs.remove(id) }
+    }
+
+    func toggleSelection(for id: String) { setSelected(!isSelected(id), for: id) }
+
+    func selectedCount(for category: CleanupCategory) -> Int {
+        candidates(for: category).filter { isSelected($0.id) }.count
+    }
+
+    func isCategorySelected(_ category: CleanupCategory) -> Bool {
+        let items = candidates(for: category)
+        return !items.isEmpty && items.allSatisfy { isSelected($0.id) }
+    }
+
+    func setSelected(_ selected: Bool, for category: CleanupCategory) {
+        guard canSelect else { return }
+        let ids = Set(candidates(for: category).map(\.id))
+        if selected { selectedIDs.formUnion(ids) } else { selectedIDs.subtract(ids) }
+    }
+
+    func toggleSelection(for category: CleanupCategory) {
+        setSelected(!isCategorySelected(category), for: category)
+    }
+
+    func categoryImpactSummary(for category: CleanupCategory) -> String {
+        let items = candidates(for: category)
+        // Show irreversible losses before rebuildable-cache effects, even when collapsed.
+        if items.contains(where: { $0.kind == .cursorSnapshots || $0.kind == .claudeFileHistory }) {
+            return items.contains(where: { $0.kind == .claudeShellSnapshot || $0.kind == .codexShellSnapshot })
+                ? "旧代码与终端快照无法恢复；缓存会重建" : "旧代码历史删除后无法恢复；缓存会重建"
+        }
+        if items.contains(where: { $0.kind == .claudeShellSnapshot || $0.kind == .codexShellSnapshot }) {
+            return "旧终端环境快照删除后无法恢复"
+        }
+        if items.contains(where: { $0.kind == .blenderBackup }) {
+            return "旧备份无法恢复；每个场景保留最新 1 份"
+        }
+        if items.contains(where: { $0.kind == .diagnosticReport }) {
+            return "旧诊断报告将删除；缓存会重建"
+        }
+        return items.first?.impactTitle ?? (report == nil ? "扫描后查看影响与路径" : "暂无可清理项目")
+    }
+
     func scan() {
         guard !isBusy else { return }
+        selectedIDs.removeAll()
         phase = .scanning
         report = nil
         result = nil
@@ -83,7 +137,7 @@ final class CleanerViewModel: ObservableObject {
     }
 
     func clean() {
-        guard canClean, let report else { return }
+        guard canClean, let report = selectedReport else { return }
         phase = .cleaning
         progress = 0
         errorMessage = nil
@@ -127,6 +181,7 @@ final class CleanerViewModel: ObservableObject {
     }
 
     private func finishScan(_ report: ScanReport) {
+        selectedIDs.removeAll()
         self.report = report
         progress = 1
         phase = .scanned
@@ -162,15 +217,33 @@ final class CleanerViewModel: ObservableObject {
     }
 
     private static func exampleReport() -> ScanReport {
-        ScanReport(candidates: [
+        let newestHistory = "~/.claude/file-history/22222222-2222-4222-8222-222222222222"
+        let newestShell = "~/.codex/shell_snapshots/demo-session-newest.sh"
+        let newestScene = "~/Demo/Scenes/scene.blend1"
+        return ScanReport(candidates: [
             .init(path: "~/Library/Caches/go-build", category: .compilation, kind: .goCache,
-                  reason: "可重新生成的 Go 编译缓存（演示）", estimatedBytes: 51_600_000_000, fileCount: 1280),
-            .init(path: "~/Library/Application Support/Cursor/User/History/old-snapshot", category: .cursor,
-                  kind: .cursorSnapshots, reason: "超过保留期的旧快照（演示）", estimatedBytes: 8_200_000_000, fileCount: 216),
+                  reason: "可重新生成的 Go 编译缓存（示例）", estimatedBytes: 51_600_000_000, fileCount: 1280),
+            .init(path: "~/.claude/file-history/11111111-1111-4111-8111-111111111111", category: .cursor,
+                  kind: .claudeFileHistory, reason: "超过 30 天的旧文件历史组（示例）", estimatedBytes: 180_000_000, fileCount: 36,
+                  retainedPath: newestHistory),
+            .init(path: "~/Library/Application Support/Codex/Cache", category: .cursor,
+                  kind: .aiCache, reason: "可重新下载的 AI 应用资源缓存（示例）", estimatedBytes: 720_000_000, fileCount: 216),
+            .init(path: "~/.codex/shell_snapshots/demo-session-old.sh", category: .cursor,
+                  kind: .codexShellSnapshot, reason: "超过 7 天的旧终端快照（示例）", estimatedBytes: 8_000_000, fileCount: 1,
+                  retainedPath: newestShell),
             .init(path: "/private/tmp/mac-cleaner-demo/package-staging", category: .temporary, kind: .stagingCopy,
-                  reason: "已核验的打包临时副本（演示）", estimatedBytes: 3_400_000_000, fileCount: 48),
+                  reason: "已核验的打包临时副本（示例）", estimatedBytes: 3_400_000_000, fileCount: 48),
             .init(path: "~/Library/Caches/update-demo/old-download", category: .updates, kind: .obsoleteUpdate,
-                  reason: "已由新版本替代的更新下载（演示）", estimatedBytes: 2_600_000_000, fileCount: 3)
-        ], availableBytes: 102_400_000_000)
+                  reason: "已由新版本替代的更新下载（示例）", estimatedBytes: 2_600_000_000, fileCount: 3),
+            .init(path: "~/Library/Caches/demo-static-resource", category: .webCache, kind: .staticWebEntry,
+                  reason: "已验证的静态资源缓存（示例）", estimatedBytes: 160_000_000, fileCount: 20),
+            .init(path: "~/Demo/Scenes/scene.blend2", category: .blender, kind: .blenderBackup,
+                  reason: "同场景有较新的备份（示例）", estimatedBytes: 1_200_000_000, fileCount: 1,
+                  retainedPath: newestScene),
+            .init(path: "~/Library/Caches/com.google.Chrome/Default/Cache/Cache_Data", category: .daily,
+                  kind: .browserCache, reason: "超过保留期的浏览器资源缓存（示例）", estimatedBytes: 680_000_000, fileCount: 162),
+            .init(path: "~/Library/Logs/DiagnosticReports/DemoApp-old.ips", category: .daily,
+                  kind: .diagnosticReport, reason: "超过 7 天的旧诊断报告（示例）", estimatedBytes: 14_000_000, fileCount: 1)
+        ], availableBytes: 102_400_000_000, retainedBackups: [newestHistory, newestShell, newestScene])
     }
 }

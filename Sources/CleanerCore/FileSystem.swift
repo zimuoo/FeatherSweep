@@ -3,12 +3,13 @@ import CryptoKit
 import Darwin
 
 public enum CleanerError: LocalizedError {
-    case unsafe(String), changed(String), busy(String), system(String), staleScan
+    case unsafe(String), changed(String), busy(String), uncertainOccupancy(String), system(String), staleScan
     public var errorDescription: String? {
         switch self {
         case .unsafe(let p): return "不在清理规则内或包含不安全路径：\(p)"
         case .changed(let p): return "扫描后内容发生变化，已跳过：\(p)"
         case .busy(let p): return "正在使用，已跳过：\(p)"
+        case .uncertainOccupancy(let p): return "存在未识别的 Node / Bun 进程，无法确认 AI 快照或目录缓存闲置，已安全跳过：\(p)"
         case .system(let p): return p
         case .staleScan: return "扫描结果已过期，请重新查看垃圾。"
         }
@@ -184,7 +185,7 @@ struct OpenFileState {
         if kind == .rustCache, commands.contains(where: { ["cargo","rustc"].contains(URL(fileURLWithPath:$0).lastPathComponent) }) { return true }
         if [.cursorSnapshots,.cursorSearchIndex].contains(kind), commands.contains(where: { $0.contains("/Cursor.app/") }) { return true }
         if kind == .blenderBackup, commands.contains(where: { URL(fileURLWithPath:$0).lastPathComponent == "Blender" }) { return true }
-        return false
+        return busyAIOrDaily(kind,path)
     }
     static func validatedOutput(executable:String,status:Int32,output:Data,diagnostics:Data) throws -> String {
         guard status == 0,diagnostics.isEmpty,!output.isEmpty else { throw CleanerError.system("无法完整检查文件占用，清理已停止。\(String(decoding:diagnostics.prefix(512),as:UTF8.self))") }

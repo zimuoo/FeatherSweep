@@ -36,7 +36,7 @@ struct FeatherSweepApplication {
     }
 }
 
-private struct LaunchOptions {
+struct LaunchOptions {
     var isDemo = false
     var scanJSON = false
     var showHelp = false
@@ -72,11 +72,11 @@ private struct LaunchError: LocalizedError {
 }
 
 @MainActor
-private final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
+final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
     private let options: LaunchOptions
-    private let model: CleanerViewModel
-    private var window: NSWindow!
-    private var statusItem: NSStatusItem!
+    let model: CleanerViewModel
+    private(set) var window: NSWindow!
+    private(set) var statusItem: NSStatusItem!
     private var scanItem: NSMenuItem!
     private var cleanItem: NSMenuItem!
     private var statusTextItem: NSMenuItem!
@@ -158,10 +158,15 @@ private final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindo
     }
 
     private func refreshMenu() {
-        statusTextItem?.title = model.status
+        statusTextItem?.title = model.phase == .scanned ? "\(model.status) · \(model.selectionSummary)" : model.status
         scanItem?.isEnabled = !model.isBusy
         cleanItem?.isEnabled = model.canClean
-        statusItem?.button?.toolTip = "轻扫 · \(model.status)"
+        cleanItem?.title = model.phase == .scanned && model.selectedCount == 0
+            ? "清理垃圾（请先勾选）" : "清理已选 \(model.selectedCount) 项"
+        cleanItem?.toolTip = model.canClean
+            ? (model.isDemo ? "仅模拟清理所选项目，不会修改任何文件" : "只删除勾选项，不进废纸篓")
+            : "请在主窗口勾选要清理的项目"
+        statusItem?.button?.toolTip = "轻扫 · \(model.status) · \(model.selectionSummary)"
     }
 
     @objc private func showWindow() {
@@ -185,7 +190,7 @@ private final class CleanerAppDelegate: NSObject, NSApplicationDelegate, NSWindo
 
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "轻扫", .applicationVersion: "1.0.0",
+            .applicationName: "轻扫", .applicationVersion: "1.1.0",
             .applicationIcon: Branding.image(size: 128)
         ])
     }

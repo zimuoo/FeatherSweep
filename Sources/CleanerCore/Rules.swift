@@ -4,6 +4,10 @@ import Darwin
 struct CleanupRules {
     let config: CleanerConfiguration
     let openFiles: OpenFileState
+    let aiProducts: [AITool]
+    init(config: CleanerConfiguration, openFiles: OpenFileState) {
+        self.config = config; self.openFiles = openFiles; self.aiProducts = AITool.discover(config)
+    }
     var candidates: [CleanupCandidate] = []
     var warnings: [String] = []
     var retained: [String] = []
@@ -45,6 +49,13 @@ struct CleanupRules {
         let parent = p.deletingLastPathComponent()
         guard c.kind == .staticWebEntry || c.companionPaths.isEmpty else { return false }
         switch c.kind {
+        case .aiCache: return aiCacheOwner(p) != nil && (try? SafeFS.metadata(p)).map(SafeFS.isDirectory) == true
+        case .aiMetadataCache: return aiMetadataAllowed(p) && (try? SafeFS.metadata(p)).map(SafeFS.isRegular) == true
+        case .claudeFileHistory, .claudeShellSnapshot, .codexShellSnapshot: return aiSnapshotAllowed(p,kind:c.kind)
+        case .browserCache: return browserCacheAllowed(p) && (try? SafeFS.metadata(p)).map(SafeFS.isDirectory) == true
+        case .quickLookCache: return p == quickLookRoot && (try? SafeFS.metadata(p)).map(SafeFS.isDirectory) == true
+        case .helpCache: return helpRoots.contains(p) && (try? SafeFS.metadata(p)).map(SafeFS.isDirectory) == true
+        case .diagnosticReport: return diagnosticAllowed(p) && (try? SafeFS.metadata(p)).map(SafeFS.isRegular) == true
         case .goCache:
             return p == config.home.appendingPathComponent("Library/Caches/go-build") || (config.temporaryRoots.contains(parent) && (p.lastPathComponent.lowercased().contains("cache") || p.lastPathComponent.lowercased().contains("go")))
         case .rustCache:
@@ -74,7 +85,11 @@ struct CleanupRules {
         }
     }
     func snapshot(_ p: URL, kind: CleanupKind, entries: Bool = false) throws -> TreeSnapshot {
-        try SafeFS.snapshot(p, collectEntries:entries, skippingRootNames: kind == .goCache ? ["README","trim.txt","fuzz"] : [])
+        let tree = try SafeFS.snapshot(p, collectEntries:entries || kind.requiresStrictTree, skippingRootNames: kind == .goCache ? ["README","trim.txt","fuzz"] : [])
+        if kind.requiresStrictTree {
+            guard tree.entries.allSatisfy({ !SafeFS.isLink($0.identity) && $0.identity.owner == geteuid() }) else { throw CleanerError.unsafe(p.path) }
+        }
+        return tree
     }
     mutating func add(_ url: URL, kind: CleanupKind, category: CleanupCategory, reason: String, reference: URL? = nil, digest: String? = nil, kept: URL? = nil, companions: [URL] = []) {
         guard SafeFS.exists(url) else { return }
@@ -82,7 +97,8 @@ struct CleanupRules {
             var c = CleanupCandidate(path:url.path, category:category, kind:kind, reason:reason, referencePath:reference?.path, referenceDigest:digest, retainedPath:kept?.path)
             c.companionPaths = companions.map(\.path)
             guard allowed(c) else { throw CleanerError.unsafe(url.path) }
-            if openFiles.busy(kind,url.path) || companions.contains(where: { openFiles.contains($0.path) }) { warnings.append("正在使用，已跳过：\(url.path)"); return }
+            if openFiles.uncertainAIRuntime(kind) { warnings.append(CleanerError.uncertainOccupancy(url.path).localizedDescription); return }
+            if busy(kind,url.path) || companions.contains(where: { openFiles.contains($0.path) }) { warnings.append("正在使用，已跳过：\(url.path)"); return }
             if kind == .signingClone {
                 let s = try SafeFS.snapshot(url)
                 c.identity = s.identity; c.metadataFingerprint = s.fingerprint

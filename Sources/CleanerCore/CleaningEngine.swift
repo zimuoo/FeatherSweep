@@ -39,11 +39,13 @@ public final class CleaningEngine: @unchecked Sendable {
         var rules=CleanupRules(config:configuration,openFiles:state)
         progress(0.05,"查看 Go 编译缓存");rules.scanGo()
         progress(0.23,"查看 Rust 与 Cursor 快照");rules.scanRustAndCursor()
+        progress(0.30,"查看 AI 缓存与旧快照");rules.scanAITools()
         progress(0.40,"保留每个 Blender 场景的最新备份");rules.scanBlender()
         progress(0.49,"核对打包副本与正式安装包");rules.scanPackaging()
         progress(0.66,"检查闲置应用签名副本");rules.scanSigning()
         progress(0.75,"比较更新下载版本");rules.scanUpdates()
         progress(0.86,"识别飞书与 Cloudflare 静态资源");rules.scanWebCache()
+        progress(0.94,"查看日常缓存与旧诊断报告");rules.scanDaily()
         var seen=Set<String>()
         let items=rules.candidates.filter { seen.insert($0.path).inserted }
         progress(1,"扫描完成")
@@ -55,13 +57,14 @@ public final class CleaningEngine: @unchecked Sendable {
         guard Date().timeIntervalSince(report.scannedAt)<=1800, report.scannedAt.timeIntervalSinceNow<=5 else { throw CleanerError.staleScan }
         var state=try OpenFileState.capture(enabled:configuration.checkOpenFiles)
         var lastOccupancyCheck=Date()
+        let rules=CleanupRules(config:configuration,openFiles:state)
         func requireIdle(_ c:CleanupCandidate, force:Bool=false) throws {
             if configuration.checkOpenFiles && (force || Date().timeIntervalSince(lastOccupancyCheck)>=1) {
                 state=try OpenFileState.capture(enabled:true);lastOccupancyCheck=Date()
             }
-            guard !state.busy(c.kind,c.path),!c.companionPaths.contains(where:{state.contains($0)}), !(c.referencePath.map{state.contains($0)} ?? false) else { throw CleanerError.busy(c.path) }
+            if state.uncertainAIRuntime(c.kind) { throw CleanerError.uncertainOccupancy(c.path) }
+            guard !rules.busy(c.kind,c.path,state:state),!c.companionPaths.contains(where:{state.contains($0)}), !(c.referencePath.map{state.contains($0)} ?? false) else { throw CleanerError.busy(c.path) }
         }
-        let rules=CleanupRules(config:configuration,openFiles:state)
         let before=SafeFS.available(configuration.home)
         var removedBytes:Int64=0,removedCount=0,partialCount=0,skipped:[String]=[],failed:[String]=[]
         var rustLocks:[String:RustBuildLock]=[:]
@@ -83,6 +86,10 @@ public final class CleaningEngine: @unchecked Sendable {
                 if c.kind == .blenderBackup {
                     guard let scene=rules.backupScene(url),let group=try rules.backupGroups()[scene],group.count>1,group.first != url else { throw CleanerError.changed("最新或唯一场景备份："+c.path) }
                 }
+                if [.claudeFileHistory,.claudeShellSnapshot,.codexShellSnapshot].contains(c.kind) {
+                    guard try rules.aiSnapshotEligible(url,kind:c.kind) else { throw CleanerError.changed("最新或近期 AI 快照："+c.path) }
+                }
+                guard try rules.dailyEligible(url,kind:c.kind) else { throw CleanerError.changed("近期诊断报告："+c.path) }
                 if c.kind == .duplicatePackage {
                     guard let reference=c.referencePath,let digest=c.referenceDigest else { throw CleanerError.unsafe(c.path) }
                     referenceGuard=try VerifiedReference(url:URL(fileURLWithPath:reference),digest:digest)
@@ -99,7 +106,11 @@ public final class CleaningEngine: @unchecked Sendable {
                 var trees:[TreeSnapshot]=[]
                 for path in paths { trees.append(try rules.snapshot(path,kind:c.kind,entries:true)) }
                 guard trees.map(\.fingerprint).joined(separator:":")==c.metadataFingerprint else { throw CleanerError.changed(c.path) }
-                try requireIdle(c,force:c.kind == .duplicatePackage)
+                if [.claudeFileHistory,.claudeShellSnapshot,.codexShellSnapshot].contains(c.kind) {
+                    guard try rules.aiSnapshotEligible(url,kind:c.kind) else { throw CleanerError.changed("最新或近期 AI 快照："+c.path) }
+                }
+                guard try rules.dailyEligible(url,kind:c.kind) else { throw CleanerError.changed("近期诊断报告："+c.path) }
+                try requireIdle(c,force:c.kind == .duplicatePackage || c.kind.requiresStrictTree)
                 try referenceGuard?.validateUnchanged()
                 // Each removal is descriptor-relative, never follows a symlink, and
                 // rejects any leaf inserted or replaced since this preflight snapshot.
@@ -114,7 +125,7 @@ public final class CleaningEngine: @unchecked Sendable {
             } catch let e as CleanerError {
                 if touched { partialCount += 1;failed.append("已清理部分内容，剩余项目未完成："+c.path+"；"+e.localizedDescription);continue }
                 switch e {
-                case .unsafe,.changed,.busy: skipped.append(e.localizedDescription)
+                case .unsafe,.changed,.busy,.uncertainOccupancy: skipped.append(e.localizedDescription)
                 case .system: failed.append(e.localizedDescription)
                 case .staleScan: skipped.append(e.localizedDescription)
                 }

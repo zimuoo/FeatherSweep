@@ -7,6 +7,11 @@ struct CleanerView: View {
     @State private var expandedCategories = Set<CleanupCategory>()
     @State private var expandedMessages = Set<String>()
 
+    init(model: CleanerViewModel, initiallyExpandedCategories: Set<CleanupCategory> = []) {
+        self.model = model
+        _expandedCategories = State(initialValue: initiallyExpandedCategories)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             summary
@@ -27,6 +32,9 @@ struct CleanerView: View {
                         categoryRow(category)
                         if category != CleanupCategory.allCases.last { Divider() }
                     }
+                    if let retained = model.report?.retainedBackups, !retained.isEmpty {
+                        retainedGroup(retained)
+                    }
                     if let completion = model.completionDescription {
                         Label(completion, systemImage: "checkmark.circle.fill")
                             .font(.system(size: 12))
@@ -43,20 +51,36 @@ struct CleanerView: View {
             }
             .scrollIndicators(.automatic)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 HStack(spacing: 9) {
                     Image(systemName: "checkmark.shield")
                         .font(.system(size: 18))
                         .foregroundStyle(Branding.blue)
                         .accessibilityHidden(true)
-                    Text("保留浏览器密码与登录状态")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color(red: 0.30, green: 0.36, blue: 0.45))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("保留密码、Cookie 与登录状态")
+                            .font(.system(size: 12))
+                        Text(model.isDemo ? "仅模拟，不修改文件 · 实际清理不进废纸篓" : "只清理勾选项 · 直接删除，不进废纸篓")
+                            .font(.system(size: 10))
+                    }
+                    .foregroundStyle(Color(red: 0.30, green: 0.36, blue: 0.45))
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 12)
-                .frame(height: 38)
+                .frame(height: 42)
                 .background(Color(red: 0.95, green: 0.965, blue: 0.98), in: RoundedRectangle(cornerRadius: 9))
+                HStack {
+                    Text(model.selectionSummary)
+                        .monospacedDigit()
+                    Spacer()
+                    if !model.isBusy && model.selectedCount == 0 {
+                        Text("请先勾选要清理的项目")
+                    }
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("selectionSummary")
                 HStack(spacing: 10) {
                     Button(action: model.scan) {
                         Label("查看垃圾", systemImage: "magnifyingglass")
@@ -77,7 +101,7 @@ struct CleanerView: View {
                     .buttonStyle(CleanerPrimaryButtonStyle())
                     .controlSize(.large)
                     .disabled(!model.canClean)
-                    .help(model.isDemo ? "仅模拟清理，不会修改任何文件" : "重新核验扫描结果后清理")
+                    .help(model.selectedCount == 0 ? "请先勾选要清理的项目" : (model.isDemo ? "仅模拟清理所选项目，不会修改任何文件" : "重新核验所选项目后直接删除，不进废纸篓"))
                     .accessibilityIdentifier("cleanButton")
                 }
             }
@@ -146,80 +170,88 @@ struct CleanerView: View {
         let candidates = model.candidates(for: category)
         let bytes = candidates.reduce(Int64(0)) { $0 + $1.estimatedBytes }
         let expanded = expandedCategories.contains(category)
+        let selected = model.selectedCount(for: category)
+        let bindings = candidates.map { candidate in
+            Binding(get: { model.isSelected(candidate.id) }, set: { model.setSelected($0, for: candidate.id) })
+        }
         return VStack(alignment: .leading, spacing: 0) {
-            Button {
-                if expanded { expandedCategories.remove(category) }
-                else { expandedCategories.insert(category) }
-            } label: {
-                HStack(spacing: 13) {
-                    Image(systemName: category.symbol)
-                        .font(.system(size: 20, weight: .regular))
-                        .foregroundStyle(Branding.blue)
-                        .frame(width: 23)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(category.title)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Color.primary)
-                        if category == .blender {
-                            Text("每个场景保留最新 1 份")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
+            HStack(spacing: 9) {
+                Group {
+                    if bindings.isEmpty {
+                        // An empty collection toggle otherwise renders as checked.
+                        Toggle("选择\(category.title)的全部项目", isOn: .constant(false))
+                    } else {
+                        // A nonempty collection toggle provides the native mixed state.
+                        Toggle("选择\(category.title)的全部项目", sources: bindings, isOn: \.self)
                     }
-                    Spacer(minLength: 5)
-                    Text(model.report == nil ? "—" : CleanerViewModel.bytes(bytes))
-                        .font(.system(size: 13, weight: .medium))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color(red: 0.55, green: 0.59, blue: 0.65))
-                        .frame(width: 9)
-                        .accessibilityHidden(true)
                 }
-                .frame(maxWidth: .infinity, minHeight: category == .blender ? 58 : 46)
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+                .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
+                .disabled(!model.canSelect || candidates.isEmpty)
+                .accessibilityValue("已选 \(selected) / \(candidates.count) 项")
+                .help("勾选或取消整个分类；请先阅读右侧影响说明")
+                .accessibilityIdentifier("categorySelection-\(category.rawValue)")
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                        if expanded { expandedCategories.remove(category) }
+                        else { expandedCategories.insert(category) }
+                    }
+                } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: category.symbol)
+                            .font(.system(size: 19, weight: .regular))
+                            .foregroundStyle(Branding.blue)
+                            .frame(width: 23)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 5) {
+                                Text(category.title)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(Color.primary)
+                                if selected > 0 {
+                                    Text("已选\(selected)/\(candidates.count)")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Branding.blue)
+                                        .fixedSize()
+                                }
+                            }
+                            Text(model.categoryImpactSummary(for: category))
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Text(model.report == nil ? "—" : CleanerViewModel.bytes(bytes))
+                            .font(.system(size: 12, weight: .medium))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .fixedSize()
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.45, green: 0.49, blue: 0.55))
+                            .frame(width: 9)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(category.title)，\(model.report == nil ? "尚未扫描" : CleanerViewModel.bytes(bytes))，\(model.categoryImpactSummary(for: category))")
+                .accessibilityValue(expanded ? "已展开" : "已折叠")
+                .accessibilityHint("查看每项影响、路径与清理依据")
+                .accessibilityIdentifier("categoryDetails-\(category.rawValue)")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(category.title)，\(model.report == nil ? "尚未扫描" : CleanerViewModel.bytes(bytes))")
-            .accessibilityValue(expanded ? "已展开" : "已折叠")
-            .accessibilityHint("查看路径与清理依据")
             if expanded {
-                VStack(alignment: .leading, spacing: 9) {
+                VStack(alignment: .leading, spacing: 12) {
                     if candidates.isEmpty {
                         Text(model.report == nil ? "扫描后显示路径与清理依据" : "未发现符合安全规则的文件")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
                     ForEach(candidates) { candidate in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(candidate.path)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Text(candidate.reason)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                            Text("\(CleanerViewModel.bytes(candidate.estimatedBytes)) · \(candidate.estimatedBytes.formatted()) 字节 · \(candidate.fileCount) 个文件")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                            if let retained = candidate.retainedPath {
-                                Text("保留：\(retained)")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .textSelection(.enabled)
-                    }
-                    if category == .blender, let report = model.report, !report.retainedBackups.isEmpty {
-                        ForEach(report.retainedBackups, id: \.self) { path in
-                            Text("保留：\(path)")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
+                        candidateRow(candidate)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -228,6 +260,74 @@ struct CleanerView: View {
                 .padding(.bottom, 8)
             }
         }
+    }
+
+    private func candidateRow(_ candidate: CleanupCandidate) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Toggle("选择\(candidate.path)", isOn: Binding(
+                get: { model.isSelected(candidate.id) },
+                set: { model.setSelected($0, for: candidate.id) }
+            ))
+            .toggleStyle(.checkbox)
+            .labelsHidden()
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
+            .disabled(!model.canSelect)
+            .accessibilityHint(candidate.impactDetail)
+            .accessibilityIdentifier("candidateSelection-\(candidate.id)")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(candidate.impactTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text(candidate.impactDetail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(candidate.path)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(candidate.reason)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(CleanerViewModel.bytes(candidate.estimatedBytes)) · \(candidate.estimatedBytes.formatted()) 字节 · \(candidate.fileCount) 个文件")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                if let retained = candidate.retainedPath {
+                    Text("保留：\(retained)")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+        }
+    }
+
+    private func retainedGroup(_ paths: [String]) -> some View {
+        DisclosureGroup(isExpanded: Binding(
+            get: { expandedMessages.contains("retained") },
+            set: { if $0 { expandedMessages.insert("retained") } else { expandedMessages.remove("retained") } }
+        )) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(paths, id: \.self) { path in
+                    Text(path)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 7)
+        } label: {
+            Label("保留的最新快照与备份（\(paths.count)）", systemImage: "checkmark.shield")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 7)
     }
 
     private func messageGroup(_ title: String, messages: [String]) -> some View {
@@ -354,11 +454,12 @@ private extension CleanupCategory {
     var symbol: String {
         switch self {
         case .compilation: return "chevron.left.forwardslash.chevron.right"
-        case .cursor: return "shippingbox"
+        case .cursor: return "sparkles"
         case .temporary: return "doc.text"
         case .updates: return "icloud.and.arrow.down"
         case .webCache: return "externaldrive"
         case .blender: return "arrow.triangle.2.circlepath"
+        case .daily: return "clock.arrow.circlepath"
         }
     }
 }
